@@ -1,0 +1,33 @@
+[workspace]
+members = [
+    "sqnc-macros",
+]
+
+[workspace.package]
+version = "1.0.0"
+authors = ["Evalf <info@evalf.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/evalf/sqnc"
+rust-version = "1.66"
+
+[package]
+name = "sqnc"
+description = "Traits and adaptors for sequences"
+keywords = ["sequence", "no_std"]
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+alloc = []
+
+[dependencies]
+ndarray = { version = "0.15", optional = true }
+sqnc-macros = { path = "sqnc-macros" }
+
+[package.metadata.docs.rs]
+all-features = true
