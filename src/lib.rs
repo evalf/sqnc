@@ -30,11 +30,10 @@
 //! ```
 //! # extern crate alloc;
 //! # use alloc::vec;
-//! use sqnc;
 //! use sqnc::traits::*;
 //!
 //! // `?Sized` is needed here to support unsized types like `slice`.
-//! fn get<X: RandomAccessSequence + ?Sized>(x: &X, index: usize) -> Option<&X::Item> {
+//! fn get<X: RandomAccessSequence + ?Sized>(x: &X, index: usize) -> Option<X::GenericItem<'_>> {
 //!     x.get(index)
 //! }
 //!
@@ -45,33 +44,30 @@
 //! returns an implementation of [`Sequence`]).
 //!
 //! ```
-//! use sqnc;
 //! use sqnc::traits::*;
 //!
 //! let x = b"cdelst!";
-//! let y = x.select(&[4, 2, 3, 2, 0, 5, 2, 1, 6]).unwrap();
+//! let y = x.select([4, 2, 3, 2, 0, 5, 2, 1, 6].copied()).unwrap();
 //! assert!(y.iter().eq(b"selected!"));
 //!
-//! assert_eq!(x.select(&[4, 8, 0]), None); // Index `8` is out of bounds.
+//! assert!(x.select([4, 8, 0].copied()).is_none()); // Index `8` is out of bounds.
 //! ```
 //!
 //! A mutable selection:
 //!
 //! ```
-//! use sqnc;
 //! use sqnc::traits::*;
 //!
 //! let mut x = ['a', 'b', 'c', 'd'];
-//! let mut y = x.select_mut(&[2, 0]).unwrap();
+//! let mut y = x.select_mut([2, 0].copied()).unwrap();
 //! *y.get_mut(0).unwrap() = 'e';
 //! *y.get_mut(1).unwrap() = 'f';
-//! assert!(x.iter_owned().eq(['f', 'b', 'e', 'd']));
+//! assert!(x.iter().copied().eq(['f', 'b', 'e', 'd']));
 //! ```
 //!
 //! A mutable concatenation:
 //!
 //! ```
-//! use sqnc;
 //! use sqnc::traits::*;
 //!
 //! let mut x = ['a', 'b'];
@@ -94,17 +90,21 @@ extern crate std;
 
 mod compress;
 mod concat;
+mod map;
 mod select;
 pub mod traits;
 mod util;
+mod zip;
 
 // Aliases.
 
 pub use compress::Compress;
 pub use concat::Concat;
+pub use map::{Cloned, Copied, Map};
 pub use select::Select;
 pub use traits::*;
 pub use util::SequenceWrapper;
+pub use zip::Zip;
 
 // Implementations for foreign types.
 

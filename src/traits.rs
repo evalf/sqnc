@@ -1,9 +1,16 @@
-use crate::{Compress, Concat, Select};
+use crate::util::{MutSequence, RefSequence, SequenceWrapper};
+use crate::{Cloned, Compress, Concat, Copied, Map, Select, Zip};
 use core::ops::{Deref, DerefMut};
 
-pub trait Sequence {
+/// Sequence with item type with generic life time.
+pub trait SequenceGeneric {
     /// The type of the items of the sequence.
-    type Item;
+    type GenericItem<'a>
+    where
+        Self: 'a;
+    type GenericItemMut<'a>
+    where
+        Self: 'a;
 
     /// Returns the length of the sequence.
     fn len(&self) -> usize;
@@ -14,6 +21,66 @@ pub trait Sequence {
         self.len() == 0
     }
 
+    /// Creates a sequence which copies all of its elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqnc::traits::*;
+    ///
+    /// let x = [1, 2, 3];
+    /// let y = SequenceGeneric::copied(&x);
+    /// assert!(y.iter().eq(1..4));
+    /// ```
+    #[inline]
+    fn copied<Item>(&self) -> Copied<&Self, ((),), Item>
+    where
+        Item: Copy,
+        Self: SequenceRef<Item = Item>,
+    {
+        Copied::new(self)
+    }
+
+    /// Creates a sequence which clones all of its elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqnc::traits::*;
+    ///
+    /// let x = [1, 2, 3];
+    /// let y = SequenceGeneric::cloned(&x);
+    /// assert!(y.iter().eq(1..4));
+    /// ```
+    #[inline]
+    fn cloned<Item>(&self) -> Cloned<&Self, ((),), Item>
+    where
+        Item: Clone,
+        Self: SequenceRef<Item = Item>,
+    {
+        Cloned::new(self)
+    }
+
+    /// Takes a closure and creates a sequence which calls the closure on each element.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqnc::traits::*;
+    ///
+    /// let x = [1, 2, 3];
+    /// let y = SequenceGeneric::map(&x, |v| v + 4);
+    /// assert_eq!(y.get(1), Some(6));
+    /// assert!(y.iter().eq(5..8));
+    /// ```
+    #[inline]
+    fn map<B, F>(&self, f: F) -> Map<&Self, ((),), B, F>
+    where
+        for<'a> F: Fn(Self::GenericItem<'a>) -> B,
+    {
+        Map::new(self, f)
+    }
+
     /// Returns the concatenation with another sequence.
     ///
     /// The returned sequence references both input sequences.
@@ -21,17 +88,21 @@ pub trait Sequence {
     /// # Example
     ///
     /// ```
-    /// use sqnc::{IterableOwnedSequence, Sequence};
+    /// use sqnc::traits::*;
     ///
     /// let x = vec![0, 1, 2];
     /// let y = [3, 4, 5];
     /// let z = x.concat(y.as_slice());
-    /// assert!(z.iter_owned().eq(0..6));
+    /// assert!(z.iter().copied().eq(0..6));
     /// ```
     #[inline]
     fn concat<'s, 'o, O>(&'s self, other: &'o O) -> Concat<&'s Self, ((),), &'o O, ((),)>
     where
-        O: Sequence<Item = Self::Item> + ?Sized,
+        O: SequenceGeneric + ?Sized,
+        for<'a> O: SequenceGeneric<
+                GenericItem<'a> = Self::GenericItem<'a>,
+                GenericItemMut<'a> = Self::GenericItemMut<'a>,
+            > + 'a,
     {
         Concat::new(self, other)
     }
@@ -43,7 +114,7 @@ pub trait Sequence {
     /// # Example
     ///
     /// ```
-    /// use sqnc::{RandomAccessSequenceMut, Sequence};
+    /// use sqnc::traits::*;
     ///
     /// let mut x = vec![0, 1, 2];
     /// let mut y = [3, 4, 5];
@@ -59,7 +130,11 @@ pub trait Sequence {
         other: &'o mut O,
     ) -> Concat<&'s mut Self, ((),), &'o mut O, ((),)>
     where
-        O: Sequence<Item = Self::Item> + ?Sized,
+        O: SequenceGeneric + ?Sized,
+        for<'a> O: SequenceGeneric<
+                GenericItem<'a> = Self::GenericItem<'a>,
+                GenericItemMut<'a> = Self::GenericItemMut<'a>,
+            > + 'a,
     {
         Concat::new(self, other)
     }
@@ -71,21 +146,21 @@ pub trait Sequence {
     /// # Examples
     ///
     /// ```
-    /// use sqnc::{IterableSequence, Sequence};
+    /// use sqnc::traits::*;
     ///
     /// let x = b"cdelst!";
-    /// let y = x.select(&[4, 2, 3, 2, 0, 5, 2, 1, 6]).unwrap();
+    /// let i = [4, 2, 3, 2, 0, 5, 2, 1, 6].copied();
+    /// let y = x.select(i).unwrap();
     /// assert!(y.iter().eq(b"selected!"));
     ///
-    /// assert_eq!(x.select(&[4, 8, 0]), None); // Index `8` is out of bounds.
+    /// assert_eq!(x.select([4, 8, 0].copied()), None); // Index `8` is out of bounds.
     /// ```
     #[inline]
-    fn select<'seq, 'idx, Idx>(
-        &'seq self,
-        indices: &'idx Idx,
-    ) -> Option<Select<&'seq Self, ((),), &'idx Idx, ((),)>>
+    fn select<Idx, IdxN>(&self, indices: Idx) -> Option<Select<&Self, ((),), Idx, IdxN>>
     where
-        Idx: RandomAccessSequenceOwned<Item = usize> + IterableOwnedSequence + ?Sized,
+        Idx: AsSequence<IdxN>,
+        Idx::Sequence: RandomAccessSequence + IterableSequence,
+        for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
     {
         Select::new(self, indices)
     }
@@ -97,21 +172,21 @@ pub trait Sequence {
     /// # Examples
     ///
     /// ```
-    /// use sqnc::{IterableSequence, Sequence};
+    /// use sqnc::traits::*;
     ///
-    /// let x = b"cdelst!";
-    /// let y = x.select(&[4, 2, 3, 2, 0, 5, 2, 1, 6]).unwrap();
-    /// assert!(y.iter().eq(b"selected!"));
+    /// let mut x = [2, 3, 4];
+    /// let mut y = x.select_mut([1, 0].copied()).unwrap();
+    /// *y.get_mut(0).unwrap() = 5;
+    /// assert_eq!(x, [2, 5, 4]);
     ///
-    /// assert_eq!(x.select(&[4, 8, 0]), None); // Index `8` is out of bounds.
+    /// assert!(x.select_mut([1, 8].copied()).is_none()); // Index `8` is out of bounds.
     /// ```
     #[inline]
-    fn select_mut<'seq, 'idx, Idx>(
-        &'seq mut self,
-        indices: &'idx Idx,
-    ) -> Option<Select<&'seq mut Self, ((),), &'idx Idx, ((),)>>
+    fn select_mut<Idx, IdxN>(&mut self, indices: Idx) -> Option<Select<&mut Self, ((),), Idx, IdxN>>
     where
-        Idx: RandomAccessSequenceOwned<Item = usize> + IterableOwnedSequence + ?Sized,
+        Idx: AsSequence<IdxN>,
+        Idx::Sequence: RandomAccessSequence + IterableSequence,
+        for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
     {
         Select::new(self, indices)
     }
@@ -121,21 +196,20 @@ pub trait Sequence {
     /// # Examples
     ///
     /// ```
-    /// use sqnc::{IterableOwnedSequence, Sequence};
+    /// use sqnc::traits::*;
     ///
     /// let x = 0..5;
-    /// let y = x.compress(&[false, true, true, false, true]).unwrap();
-    /// assert!(y.iter_owned().eq([1, 2, 4]));
+    /// let y = x.compress([false, true, true, false, true].copied()).unwrap();
+    /// assert!(y.iter().eq([1, 2, 4]));
     ///
-    /// assert!(x.compress(&[false, false, true]).is_none()); // Too few booleans.
+    /// assert!(x.compress([false, false, true].copied()).is_none()); // Too few booleans.
     /// ```
     #[inline]
-    fn compress<'seq, 'mask, Mask>(
-        &'seq self,
-        mask: &'mask Mask,
-    ) -> Option<Compress<&'seq Self, ((),), &'mask Mask, ((),)>>
+    fn compress<Mask, MaskN>(&self, mask: Mask) -> Option<Compress<&Self, ((),), Mask, MaskN>>
     where
-        Mask: IterableOwnedSequence<Item = bool> + ?Sized,
+        Mask: AsSequence<MaskN>,
+        Mask::Sequence: IterableSequence,
+        for<'a> Mask::Sequence: SequenceGeneric<GenericItem<'a> = bool> + 'a,
     {
         Compress::new(self, mask)
     }
@@ -145,77 +219,117 @@ pub trait Sequence {
     /// # Examples
     ///
     /// ```
-    /// use sqnc::{IterableOwnedSequence, RandomAccessSequenceMut, Sequence};
+    /// use sqnc::traits::*;
     ///
     /// let mut x = [0, 1, 2, 3, 4];
-    /// let mut y = x.compress_mut(&[false, true, true, false, true]).unwrap();
+    /// let mut y = x.compress_mut([false, true, true, false, true].copied()).unwrap();
     /// *y.get_mut(0).unwrap() = 5;
     /// *y.get_mut(1).unwrap() = 6;
     /// *y.get_mut(2).unwrap() = 7;
-    /// assert!(x.iter_owned().eq([0, 5, 6, 3, 7]));
+    /// assert_eq!(x, [0, 5, 6, 3, 7]);
     ///
-    /// assert!(x.compress_mut(&[false, false, true]).is_none()); // Too few booleans.
+    /// assert!(x.compress_mut([false, false, true].copied()).is_none()); // Too few booleans.
     /// ```
     #[inline]
-    fn compress_mut<'seq, 'mask, Mask>(
-        &'seq mut self,
-        mask: &'mask Mask,
-    ) -> Option<Compress<&'seq mut Self, ((),), &'mask Mask, ((),)>>
+    fn compress_mut<Mask, MaskN>(
+        &mut self,
+        mask: Mask,
+    ) -> Option<Compress<&mut Self, ((),), Mask, MaskN>>
     where
-        Mask: IterableOwnedSequence<Item = bool> + ?Sized,
+        Mask: AsSequence<MaskN>,
+        Mask::Sequence: IterableSequence,
+        for<'a> Mask::Sequence: SequenceGeneric<GenericItem<'a> = bool> + 'a,
     {
         Compress::new(self, mask)
     }
+
+    /// 'Zips up' two sequences into a single sequence of pairs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqnc::traits::*;
+    ///
+    /// let x = 0..3;
+    /// let y = 3..6;
+    /// let z = SequenceGeneric::zip(&x, &y).unwrap();
+    /// assert_eq!(z.get(1), Some((1, 4)));
+    /// ```
+    #[inline]
+    fn zip<'s, 'o, O>(
+        &'s self,
+        other: &'o O,
+    ) -> Option<Zip<RefSequence<'s, Self>, RefSequence<'o, O>>>
+    where
+        O: SequenceGeneric + ?Sized,
+    {
+        Zip::new(self.into(), other.into())
+    }
 }
 
-pub trait RandomAccessSequence: Sequence {
-    /// Returns a reference to the element at the given index or `None`.
-    fn get(&self, index: usize) -> Option<&Self::Item>;
-
-    /// Returns a reference to the first element or `None` if the sequence is empty.
-    #[inline]
-    fn first(&self) -> Option<&Self::Item> {
-        self.get(0)
-    }
-
-    /// Returns a reference to the last element or `None` if the sequence is empty.
-    #[inline]
-    fn last(&self) -> Option<&Self::Item> {
-        self.get(self.len().checked_sub(1)?)
-    }
+pub trait SequenceOwned: SequenceGeneric
+where
+    for<'a> Self: SequenceGeneric<GenericItem<'a> = Self::Item> + 'a,
+{
+    type Item;
 }
 
-pub trait RandomAccessSequenceMut: RandomAccessSequence {
+impl<S, Item> SequenceOwned for S
+where
+    S: SequenceGeneric + ?Sized,
+    for<'a> S: SequenceGeneric<GenericItem<'a> = Item> + 'a,
+{
+    type Item = Item;
+}
+
+pub trait SequenceRef: SequenceGeneric
+where
+    for<'a> Self: SequenceGeneric<GenericItem<'a> = &'a Self::Item, GenericItemMut<'a> = &'a mut Self::Item>
+        + 'a,
+{
+    type Item: ?Sized;
+}
+
+impl<S, Item> SequenceRef for S
+where
+    S: SequenceGeneric + ?Sized,
+    for<'a> S: SequenceGeneric<GenericItem<'a> = &'a Item, GenericItemMut<'a> = &'a mut Item> + 'a,
+    Item: ?Sized,
+{
+    type Item = Item;
+}
+
+pub trait RandomAccessSequenceMut: SequenceGeneric {
     /// Returns a mutable reference to the element at the given index or `None`.
-    fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item>;
+    fn get_mut(&mut self, index: usize) -> Option<Self::GenericItemMut<'_>>;
 
     /// Returns a mutable reference to the first element or `None` if the sequence is empty.
     #[inline]
-    fn first_mut(&mut self) -> Option<&mut Self::Item> {
+    fn first_mut(&mut self) -> Option<Self::GenericItemMut<'_>> {
         self.get_mut(0)
     }
 
     /// Returns a mutable reference to the last element or `None` if the sequence is empty.
     #[inline]
-    fn last_mut(&mut self) -> Option<&mut Self::Item> {
+    fn last_mut(&mut self) -> Option<Self::GenericItemMut<'_>> {
         self.get_mut(self.len().checked_sub(1)?)
     }
 }
 
-pub trait RandomAccessSequenceOwned: Sequence {
-    /// Returns an owned element at the given index or `None`.
-    fn get_owned(&self, index: usize) -> Option<Self::Item>;
+pub trait RandomAccessSequence: SequenceGeneric {
+    /// Returns the element at the given index or `None`.
+    fn get(&self, index: usize) -> Option<Self::GenericItem<'_>>;
 
     /// Returns the first element or `None` if the sequence is empty.
     #[inline]
-    fn first_owned(&self) -> Option<Self::Item> {
-        self.get_owned(0)
+    fn first(&self) -> Option<Self::GenericItem<'_>> {
+        self.get(0)
     }
 
     /// Returns the last element or `None` if the sequence is empty.
     #[inline]
-    fn last_owned(&self) -> Option<Self::Item> {
-        self.get_owned(self.len().checked_sub(1)?)
+    fn last(&self) -> Option<Self::GenericItem<'_>> {
+        self.get(self.len().checked_sub(1)?)
     }
 }
 
@@ -223,29 +337,29 @@ pub trait RandomAccessSequenceOwned: Sequence {
 ///
 /// See [`IterableMutSequence`] for the mutable counterpart and
 /// [`IterableOwnedSequence`] for a variant that returns owned elements.
-pub trait IterableSequence: Sequence {
+pub trait IterableSequence: SequenceGeneric {
     /// The return type of [`Self::iter`].
-    type Iter<'a>: Iterator<Item = &'a Self::Item>
+    type Iter<'a>: Iterator<Item = Self::GenericItem<'a>>
     where
         Self: 'a;
 
-    /// Returns an iterator that returns references to elements.
+    /// Returns an iterator that returns elements.
     fn iter(&self) -> Self::Iter<'_>;
 
-    /// Returns a reference to the minimum of the sequence or `None` if the sequence is empty.
+    /// Returns the minimum of the sequence or `None` if the sequence is empty.
     #[inline]
-    fn min(&self) -> Option<&Self::Item>
+    fn min<'a>(&'a self) -> Option<Self::GenericItem<'a>>
     where
-        Self::Item: Ord,
+        Self::GenericItem<'a>: Ord,
     {
         self.iter().min()
     }
 
-    /// Returns a reference to the maximum of the sequence or `None` if the sequence is empty.
+    /// Returns the maximum of the sequence or `None` if the sequence is empty.
     #[inline]
-    fn max(&self) -> Option<&Self::Item>
+    fn max<'a>(&'a self) -> Option<Self::GenericItem<'a>>
     where
-        Self::Item: Ord,
+        Self::GenericItem<'a>: Ord,
     {
         self.iter().max()
     }
@@ -255,9 +369,9 @@ pub trait IterableSequence: Sequence {
 ///
 /// See [`IterableSequence`] for the immmutable counterpart and
 /// [`IterableOwnedSequence`] for a variant that returns owned elements.
-pub trait IterableMutSequence: IterableSequence {
+pub trait IterableMutSequence: SequenceGeneric {
     /// The return type of [`Self::iter_mut`].
-    type IterMut<'a>: Iterator<Item = &'a mut Self::Item>
+    type IterMut<'a>: Iterator<Item = Self::GenericItemMut<'a>>
     where
         Self: 'a;
 
@@ -265,41 +379,8 @@ pub trait IterableMutSequence: IterableSequence {
     fn iter_mut(&mut self) -> Self::IterMut<'_>;
 }
 
-/// Trait for obtaining an iterator that returns owned elements.
-///
-/// See [`IterableSequence`] and [`IterableMutSequence`] for variants that
-/// return references to elements.
-pub trait IterableOwnedSequence: Sequence {
-    /// The return type of [`Self::iter_owned`].
-    type IterOwned<'a>: Iterator<Item = Self::Item>
-    where
-        Self: 'a;
-
-    /// Returns an iterator that returns owned elements.
-    fn iter_owned(&self) -> Self::IterOwned<'_>;
-
-    /// Returns the minimum of the sequence or `None` if the sequence is empty.
-    #[inline]
-    fn min_owned(&self) -> Option<Self::Item>
-    where
-        Self::Item: Ord,
-    {
-        self.iter_owned().min()
-    }
-
-    /// Returns the maximum of the sequence or `None` if the sequence is empty.
-    #[inline]
-    fn max_owned(&self) -> Option<Self::Item>
-    where
-        Self::Item: Ord,
-    {
-        self.iter_owned().max()
-    }
-}
-
 pub trait AsSequence<N = ()> {
-    type Item;
-    type Sequence: Sequence<Item = Self::Item> + ?Sized;
+    type Sequence: SequenceGeneric + ?Sized;
 
     fn as_sequence(&self) -> &Self::Sequence;
 }
@@ -308,8 +389,7 @@ pub trait AsMutSequence<N = ()>: AsSequence<N> {
     fn as_mut_sequence(&mut self) -> &mut Self::Sequence;
 }
 
-impl<S: Sequence + ?Sized> AsSequence<()> for S {
-    type Item = S::Item;
+impl<S: SequenceGeneric + ?Sized> AsSequence<()> for S {
     type Sequence = S;
 
     #[inline]
@@ -318,7 +398,7 @@ impl<S: Sequence + ?Sized> AsSequence<()> for S {
     }
 }
 
-impl<S: Sequence + ?Sized> AsMutSequence<()> for S {
+impl<S: SequenceGeneric + ?Sized> AsMutSequence<()> for S {
     #[inline]
     fn as_mut_sequence(&mut self) -> &mut Self::Sequence {
         self
@@ -330,7 +410,6 @@ where
     S: Deref + ?Sized,
     S::Target: AsSequence<N>,
 {
-    type Item = <S::Target as AsSequence<N>>::Item;
     type Sequence = <S::Target as AsSequence<N>>::Sequence;
 
     #[inline]

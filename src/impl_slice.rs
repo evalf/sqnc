@@ -1,12 +1,18 @@
 use crate::traits::*;
-use core::{iter, slice};
+use core::slice;
 
-impl<T> Sequence for [T] {
-    type Item = T;
+impl<T> SequenceGeneric for [T] {
+    type GenericItem<'a> = &'a T where Self: 'a;
+    type GenericItemMut<'a> = &'a mut T where Self: 'a;
 
     #[inline]
     fn len(&self) -> usize {
         self.len()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.is_empty()
     }
 }
 
@@ -15,6 +21,16 @@ impl<T> RandomAccessSequence for [T] {
     fn get(&self, index: usize) -> Option<&T> {
         self.get(index)
     }
+
+    #[inline]
+    fn first(&self) -> Option<&T> {
+        self.first()
+    }
+
+    #[inline]
+    fn last(&self) -> Option<&T> {
+        self.last()
+    }
 }
 
 impl<T> RandomAccessSequenceMut for [T] {
@@ -22,20 +38,40 @@ impl<T> RandomAccessSequenceMut for [T] {
     fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         self.get_mut(index)
     }
-}
 
-impl<T: Copy> RandomAccessSequenceOwned for [T] {
     #[inline]
-    fn get_owned(&self, index: usize) -> Option<T> {
-        self.get(index).copied()
+    fn first_mut(&mut self) -> Option<&mut T> {
+        self.first_mut()
+    }
+
+    #[inline]
+    fn last_mut(&mut self) -> Option<&mut T> {
+        self.last_mut()
     }
 }
 
 impl<T> IterableSequence for [T] {
     type Iter<'a> = slice::Iter<'a, T> where Self: 'a;
 
+    #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         self.iter()
+    }
+
+    #[inline]
+    fn min<'a>(&'a self) -> Option<&'a T>
+    where
+        &'a T: Ord,
+    {
+        self.iter().min()
+    }
+
+    #[inline]
+    fn max<'a>(&'a self) -> Option<&'a T>
+    where
+        &'a T: Ord,
+    {
+        self.iter().max()
     }
 }
 
@@ -47,14 +83,6 @@ impl<T> IterableMutSequence for [T] {
     }
 }
 
-impl<T: Copy> IterableOwnedSequence for [T] {
-    type IterOwned<'a> = iter::Copied<slice::Iter<'a, T>> where Self: 'a;
-
-    fn iter_owned(&self) -> Self::IterOwned<'_> {
-        self.iter().copied()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::traits::*;
@@ -62,7 +90,15 @@ mod tests {
     #[test]
     fn len() {
         let x: &[usize] = &[2, 3, 4];
-        assert_eq!(Sequence::len(x), 3);
+        assert_eq!(SequenceGeneric::len(x), 3);
+    }
+
+    #[test]
+    fn is_empty() {
+        let x: &[usize] = &[2, 3, 4];
+        assert!(!SequenceGeneric::is_empty(x));
+        let y: &[usize] = &[];
+        assert!(SequenceGeneric::is_empty(y));
     }
 
     #[test]
@@ -72,6 +108,18 @@ mod tests {
         assert_eq!(RandomAccessSequence::get(x, 1), Some(&3));
         assert_eq!(RandomAccessSequence::get(x, 2), Some(&4));
         assert_eq!(RandomAccessSequence::get(x, 3), None);
+    }
+
+    #[test]
+    fn first() {
+        let x: &[usize] = &[2, 3, 4];
+        assert_eq!(RandomAccessSequence::first(x), Some(&2));
+    }
+
+    #[test]
+    fn last() {
+        let x: &[usize] = &[2, 3, 4];
+        assert_eq!(RandomAccessSequence::last(x), Some(&4));
     }
 
     #[test]
@@ -85,12 +133,17 @@ mod tests {
     }
 
     #[test]
-    fn get_owned() {
-        let x: &[usize] = &[2, 3, 4];
-        assert_eq!(RandomAccessSequenceOwned::get_owned(x, 0), Some(2));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(x, 1), Some(3));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(x, 2), Some(4));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(x, 3), None);
+    fn first_mut() {
+        let x: &mut [usize] = &mut [2, 3, 4];
+        *RandomAccessSequenceMut::first_mut(x).unwrap() = 5;
+        assert_eq!(x, &[5, 3, 4]);
+    }
+
+    #[test]
+    fn last_mut() {
+        let x: &mut [usize] = &mut [2, 3, 4];
+        *RandomAccessSequenceMut::last_mut(x).unwrap() = 5;
+        assert_eq!(x, &[2, 3, 5]);
     }
 
     #[test]
@@ -100,15 +153,25 @@ mod tests {
     }
 
     #[test]
+    fn min() {
+        let x: &[usize] = &[2, 3, 4];
+        assert_eq!(IterableSequence::min(x), Some(&2));
+        let y: &[usize] = &[];
+        assert_eq!(IterableSequence::min(y), None);
+    }
+
+    #[test]
+    fn max() {
+        let x: &[usize] = &[2, 3, 4];
+        assert_eq!(IterableSequence::max(x), Some(&4));
+        let y: &[usize] = &[];
+        assert_eq!(IterableSequence::max(y), None);
+    }
+
+    #[test]
     fn iter_mut() {
         let x: &mut [usize] = &mut [2, 3, 4];
         IterableMutSequence::iter_mut(x).for_each(|e| *e += 3);
         assert_eq!(x, &[5, 6, 7]);
-    }
-
-    #[test]
-    fn iter_owned() {
-        let x: &[usize] = &[2, 3, 4];
-        assert!(IterableOwnedSequence::iter_owned(x).eq([2, 3, 4]));
     }
 }

@@ -1,8 +1,9 @@
 use crate::traits::*;
 use core::ops::Range;
 
-impl Sequence for Range<usize> {
-    type Item = usize;
+impl SequenceGeneric for Range<usize> {
+    type GenericItem<'a> = usize;
+    type GenericItemMut<'a> = usize;
 
     #[inline]
     fn len(&self) -> usize {
@@ -10,34 +11,50 @@ impl Sequence for Range<usize> {
     }
 }
 
-impl RandomAccessSequenceOwned for Range<usize> {
+impl RandomAccessSequence for Range<usize> {
     #[inline]
-    fn get_owned(&self, index: usize) -> Option<Self::Item> {
+    fn get(&self, index: usize) -> Option<usize> {
         let value = self.start + index;
         (value < self.end).then_some(value)
     }
-}
-
-impl IterableOwnedSequence for Range<usize> {
-    type IterOwned<'a> = Self;
 
     #[inline]
-    fn iter_owned(&self) -> Self::IterOwned<'_> {
-        self.clone()
-    }
-
-    #[inline]
-    fn min_owned(&self) -> Option<Self::Item> {
+    fn first(&self) -> Option<usize> {
         (!self.is_empty()).then_some(self.start)
     }
 
     #[inline]
-    fn max_owned(&self) -> Option<Self::Item> {
+    fn last(&self) -> Option<usize> {
         if !self.is_empty() {
             self.end.checked_sub(1)
         } else {
             None
         }
+    }
+}
+
+impl IterableSequence for Range<usize> {
+    type Iter<'a> = Self;
+
+    #[inline]
+    fn iter(&self) -> Self {
+        self.clone()
+    }
+
+    #[inline]
+    fn min<'a>(&'a self) -> Option<usize>
+    where
+        Self::GenericItem<'a>: Ord,
+    {
+        self.first()
+    }
+
+    #[inline]
+    fn max<'a>(&'a self) -> Option<usize>
+    where
+        Self::GenericItem<'a>: Ord,
+    {
+        self.last()
     }
 }
 
@@ -47,36 +64,48 @@ mod tests {
 
     #[test]
     fn len() {
-        assert_eq!(Sequence::len(&(2..5)), 3);
-        assert_eq!(Sequence::len(&(7..5)), 0);
+        assert_eq!(SequenceGeneric::len(&(2..5)), 3);
+        assert_eq!(SequenceGeneric::len(&(7..5)), 0);
     }
 
     #[test]
-    fn get_owned() {
+    fn get() {
         let x = 2..5;
-        assert_eq!(RandomAccessSequenceOwned::get_owned(&x, 0), Some(2));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(&x, 1), Some(3));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(&x, 2), Some(4));
-        assert_eq!(RandomAccessSequenceOwned::get_owned(&x, 3), None);
+        assert_eq!(RandomAccessSequence::get(&x, 0), Some(2));
+        assert_eq!(RandomAccessSequence::get(&x, 1), Some(3));
+        assert_eq!(RandomAccessSequence::get(&x, 2), Some(4));
+        assert_eq!(RandomAccessSequence::get(&x, 3), None);
         let y = 7..5;
-        assert_eq!(RandomAccessSequenceOwned::get_owned(&y, 0), None);
+        assert_eq!(RandomAccessSequence::get(&y, 0), None);
     }
 
     #[test]
-    fn iter_owned() {
-        assert!(IterableOwnedSequence::iter_owned(&(2..5)).eq([2, 3, 4]));
-        assert!(IterableOwnedSequence::iter_owned(&(7..5)).eq([]));
+    fn first() {
+        assert_eq!(RandomAccessSequence::first(&(2..5)), Some(2));
+        assert_eq!(RandomAccessSequence::first(&(7..5)), None);
     }
 
     #[test]
-    fn min_owned() {
-        assert_eq!(IterableOwnedSequence::min_owned(&(2..5)), Some(2));
-        assert_eq!(IterableOwnedSequence::min_owned(&(7..5)), None);
+    fn last() {
+        assert_eq!(RandomAccessSequence::last(&(2..5)), Some(4));
+        assert_eq!(RandomAccessSequence::last(&(7..5)), None);
     }
 
     #[test]
-    fn max_owned() {
-        assert_eq!(IterableOwnedSequence::max_owned(&(2..5)), Some(4));
-        assert_eq!(IterableOwnedSequence::max_owned(&(7..5)), None);
+    fn iter() {
+        assert!(IterableSequence::iter(&(2..5)).eq([2, 3, 4]));
+        assert!(IterableSequence::iter(&(7..5)).eq([]));
+    }
+
+    #[test]
+    fn min() {
+        assert_eq!(IterableSequence::min(&(2..5)), Some(2));
+        assert_eq!(IterableSequence::min(&(7..5)), None);
+    }
+
+    #[test]
+    fn max() {
+        assert_eq!(IterableSequence::max(&(2..5)), Some(4));
+        assert_eq!(IterableSequence::max(&(7..5)), None);
     }
 }

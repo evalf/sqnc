@@ -10,15 +10,16 @@ pub struct Select<Seq, SeqN, Idx, IdxN> {
 impl<Seq, SeqN, Idx, IdxN> Select<Seq, SeqN, Idx, IdxN>
 where
     Seq: AsSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
-    Idx::Sequence: IterableOwnedSequence,
+    Idx: AsSequence<IdxN>,
+    for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
+    Idx::Sequence: IterableSequence,
 {
     pub fn new(sequence: Seq, indices: Idx) -> Option<Self> {
         let selection = Self {
             sequence: sequence.into(),
             indices: indices.into(),
         };
-        if let Some(max_index) = selection.indices.max_owned() {
+        if let Some(max_index) = selection.indices.max() {
             (max_index < selection.sequence.len()).then_some(selection)
         } else {
             // `indices` is empty.
@@ -27,29 +28,49 @@ where
     }
 }
 
-impl<Seq, SeqN, Idx, IdxN> Sequence for Select<Seq, SeqN, Idx, IdxN>
+impl<Seq, SeqN, Idx, IdxN> SequenceGeneric for Select<Seq, SeqN, Idx, IdxN>
 where
     Seq: AsSequence<SeqN>,
     Idx: AsSequence<IdxN>,
+    for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
 {
-    type Item = Seq::Item;
+    type GenericItem<'a> = <Seq::Sequence as SequenceGeneric>::GenericItem<'a> where Self: 'a;
+    type GenericItemMut<'a> = <Seq::Sequence as SequenceGeneric>::GenericItemMut<'a> where Self: 'a;
 
     #[inline]
     fn len(&self) -> usize {
         self.indices.len()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.indices.is_empty()
     }
 }
 
 impl<Seq, SeqN, Idx, IdxN> RandomAccessSequence for Select<Seq, SeqN, Idx, IdxN>
 where
     Seq: AsSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
+    Idx: AsSequence<IdxN>,
+    for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
     Seq::Sequence: RandomAccessSequence,
-    Idx::Sequence: RandomAccessSequenceOwned,
+    Idx::Sequence: RandomAccessSequence,
 {
     #[inline]
-    fn get(&self, index: usize) -> Option<&Self::Item> {
-        let index = self.indices.get_owned(index)?;
+    fn get(&self, index: usize) -> Option<Self::GenericItem<'_>> {
+        let index = self.indices.get(index)?;
+        self.sequence.get(index)
+    }
+
+    #[inline]
+    fn first(&self) -> Option<Self::GenericItem<'_>> {
+        let index = self.indices.first()?;
+        self.sequence.get(index)
+    }
+
+    #[inline]
+    fn last(&self) -> Option<Self::GenericItem<'_>> {
+        let index = self.indices.last()?;
         self.sequence.get(index)
     }
 }
@@ -57,28 +78,27 @@ where
 impl<Seq, SeqN, Idx, IdxN> RandomAccessSequenceMut for Select<Seq, SeqN, Idx, IdxN>
 where
     Seq: AsMutSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
+    Idx: AsSequence<IdxN>,
+    for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
     Seq::Sequence: RandomAccessSequenceMut,
-    Idx::Sequence: RandomAccessSequenceOwned,
+    Idx::Sequence: RandomAccessSequence,
 {
     #[inline]
-    fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
-        let index = self.indices.get_owned(index)?;
+    fn get_mut(&mut self, index: usize) -> Option<Self::GenericItemMut<'_>> {
+        let index = self.indices.get(index)?;
         self.sequence.get_mut(index)
     }
-}
 
-impl<Seq, SeqN, Idx, IdxN> RandomAccessSequenceOwned for Select<Seq, SeqN, Idx, IdxN>
-where
-    Seq: AsSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
-    Seq::Sequence: RandomAccessSequenceOwned,
-    Idx::Sequence: RandomAccessSequenceOwned,
-{
     #[inline]
-    fn get_owned(&self, index: usize) -> Option<Self::Item> {
-        let index = self.indices.get_owned(index)?;
-        self.sequence.get_owned(index)
+    fn first_mut(&mut self) -> Option<Self::GenericItemMut<'_>> {
+        let index = self.indices.first()?;
+        self.sequence.get_mut(index)
+    }
+
+    #[inline]
+    fn last_mut(&mut self) -> Option<Self::GenericItemMut<'_>> {
+        let index = self.indices.last()?;
+        self.sequence.get_mut(index)
     }
 }
 
@@ -93,7 +113,7 @@ where
     Seq: RandomAccessSequence + ?Sized,
     IdxIter: Iterator<Item = usize>,
 {
-    type Item = &'seq Seq::Item;
+    type Item = Seq::GenericItem<'seq>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -104,54 +124,18 @@ where
 impl<Seq, SeqN, Idx, IdxN> IterableSequence for Select<Seq, SeqN, Idx, IdxN>
 where
     Seq: AsSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
+    Idx: AsSequence<IdxN>,
+    for<'a> Idx::Sequence: SequenceGeneric<GenericItem<'a> = usize> + 'a,
     Seq::Sequence: RandomAccessSequence,
-    Idx::Sequence: IterableOwnedSequence,
+    Idx::Sequence: IterableSequence,
 {
-    type Iter<'a> = SelectIter<'a, Seq::Sequence, <Idx::Sequence as IterableOwnedSequence>::IterOwned<'a>> where Self: 'a;
+    type Iter<'a> = SelectIter<'a, Seq::Sequence, <Idx::Sequence as IterableSequence>::Iter<'a>> where Self: 'a;
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         SelectIter {
             sequence: &self.sequence,
-            indices: self.indices.iter_owned(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectIterOwned<'seq, Seq: ?Sized, IdxIter> {
-    sequence: &'seq Seq,
-    indices: IdxIter,
-}
-
-impl<'seq, Seq, IdxIter> Iterator for SelectIterOwned<'seq, Seq, IdxIter>
-where
-    Seq: RandomAccessSequenceOwned + ?Sized,
-    IdxIter: Iterator<Item = usize>,
-{
-    type Item = Seq::Item;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.sequence.get_owned(self.indices.next()?)
-    }
-}
-
-impl<Seq, SeqN, Idx, IdxN> IterableOwnedSequence for Select<Seq, SeqN, Idx, IdxN>
-where
-    Seq: AsSequence<SeqN>,
-    Idx: AsSequence<IdxN, Item = usize>,
-    Seq::Sequence: RandomAccessSequenceOwned,
-    Idx::Sequence: IterableOwnedSequence,
-{
-    type IterOwned<'a> = SelectIterOwned<'a, Seq::Sequence, <Idx::Sequence as IterableOwnedSequence>::IterOwned<'a>> where Self: 'a;
-
-    #[inline]
-    fn iter_owned(&self) -> Self::IterOwned<'_> {
-        SelectIterOwned {
-            sequence: &self.sequence,
-            indices: self.indices.iter_owned(),
+            indices: self.indices.iter(),
         }
     }
 }
@@ -163,53 +147,76 @@ mod tests {
 
     #[test]
     fn new() {
-        assert!(Select::new(3..6, [1, 0, 2, 1]).is_some());
-        assert!(Select::new(3..6, [1, 0, 3, 1]).is_none());
+        assert!(Select::new(3..6, [1, 0, 2, 1].copied()).is_some());
+        assert!(Select::new(3..6, [1, 0, 3, 1].copied()).is_none());
     }
 
     #[test]
     fn len() {
-        assert_eq!(Select::new(3..6, []).unwrap().len(), 0);
-        assert_eq!(Select::new(3..6, [1, 0, 2, 1]).unwrap().len(), 4);
+        assert_eq!(Select::new(3..6, [].copied()).unwrap().len(), 0);
+        assert_eq!(Select::new(3..6, [1, 0, 2, 1].copied()).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn is_empty() {
+        assert!(Select::new(3..6, [].copied()).unwrap().is_empty());
+        assert!(!Select::new(3..6, [1, 0, 2, 1].copied()).unwrap().is_empty());
     }
 
     #[test]
     fn get() {
-        let x = Select::new([3, 4, 5], [1, 0]).unwrap();
-        assert_eq!(x.get(0), Some(&4));
-        assert_eq!(x.get(1), Some(&3));
+        let x = Select::new(3..6, [1, 0].copied()).unwrap();
+        assert_eq!(x.get(0), Some(4));
+        assert_eq!(x.get(1), Some(3));
         assert_eq!(x.get(4), None);
+    }
+
+    #[test]
+    fn first() {
+        let x = Select::new(3..6, [1, 0].copied()).unwrap();
+        assert_eq!(x.first(), Some(4));
+    }
+
+    #[test]
+    fn last() {
+        let x = Select::new(3..6, [1, 0].copied()).unwrap();
+        assert_eq!(x.last(), Some(3));
     }
 
     #[test]
     fn get_mut() {
         let mut x = [3, 4, 5];
-        *Select::new(&mut x, [1, 1, 2]).unwrap().get_mut(0).unwrap() = 6;
+        let i = [1, 1, 2].copied();
+        *Select::new(&mut x, &i).unwrap().get_mut(0).unwrap() = 6;
         assert_eq!(x, [3, 6, 5]);
-        *Select::new(&mut x, [1, 1, 2]).unwrap().get_mut(1).unwrap() = 7;
+        *Select::new(&mut x, &i).unwrap().get_mut(1).unwrap() = 7;
         assert_eq!(x, [3, 7, 5]);
-        *Select::new(&mut x, [1, 1, 2]).unwrap().get_mut(2).unwrap() = 8;
+        *Select::new(&mut x, &i).unwrap().get_mut(2).unwrap() = 8;
         assert_eq!(x, [3, 7, 8]);
-        assert_eq!(Select::new(&mut x, [1, 1, 2]).unwrap().get_mut(3), None);
+        assert_eq!(Select::new(&mut x, &i).unwrap().get_mut(3), None);
     }
 
     #[test]
-    fn get_owned() {
-        let x = Select::new(3..6, [1, 0]).unwrap();
-        assert_eq!(x.get_owned(0), Some(4));
-        assert_eq!(x.get_owned(1), Some(3));
-        assert_eq!(x.get_owned(4), None);
+    fn first_mut() {
+        let mut x = [3, 4, 5];
+        let mut y = Select::new(&mut x, [1, 0].copied()).unwrap();
+        *y.first_mut().unwrap() = 6;
+        assert_eq!(x, [3, 6, 5]);
+        assert!(Select::new(&mut x, 0..0).unwrap().first_mut().is_none());
+    }
+
+    #[test]
+    fn last_mut() {
+        let mut x = [3, 4, 5];
+        let mut y = Select::new(&mut x, [1, 0].copied()).unwrap();
+        *y.last_mut().unwrap() = 6;
+        assert_eq!(x, [6, 4, 5]);
+        assert!(Select::new(&mut x, 0..0).unwrap().last_mut().is_none());
     }
 
     #[test]
     fn iter() {
-        let x = Select::new([3, 4, 5], [1, 1, 2]).unwrap();
-        assert!(x.iter().eq([&4, &4, &5]));
-    }
-
-    #[test]
-    fn iter_owned() {
-        let x = Select::new(3..6, [1, 1, 2]).unwrap();
-        assert!(x.iter_owned().eq([4, 4, 5]));
+        let x = Select::new(3..6, [1, 1, 2].copied()).unwrap();
+        assert!(x.iter().eq([4, 4, 5]));
     }
 }

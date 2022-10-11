@@ -1,9 +1,9 @@
 use crate::traits::*;
-use core::iter;
 use ndarray::{ArrayBase, Data, DataMut, Ix1};
 
-impl<S: Data> Sequence for ArrayBase<S, Ix1> {
-    type Item = S::Elem;
+impl<S: Data> SequenceGeneric for ArrayBase<S, Ix1> {
+    type GenericItem<'a> = &'a S::Elem where Self: 'a;
+    type GenericItemMut<'a> = &'a mut S::Elem where Self: 'a;
 
     #[inline]
     fn len(&self) -> usize {
@@ -13,30 +13,20 @@ impl<S: Data> Sequence for ArrayBase<S, Ix1> {
 
 impl<S: Data> RandomAccessSequence for ArrayBase<S, Ix1> {
     #[inline]
-    fn get(&self, index: usize) -> Option<&Self::Item> {
+    fn get(&self, index: usize) -> Option<&S::Elem> {
         self.get(index)
     }
 }
 
 impl<S: DataMut> RandomAccessSequenceMut for ArrayBase<S, Ix1> {
     #[inline]
-    fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
+    fn get_mut(&mut self, index: usize) -> Option<&mut S::Elem> {
         self.get_mut(index)
     }
 }
 
-impl<S: Data> RandomAccessSequenceOwned for ArrayBase<S, Ix1>
-where
-    Self::Item: Copy,
-{
-    #[inline]
-    fn get_owned(&self, index: usize) -> Option<Self::Item> {
-        self.get(index).copied()
-    }
-}
-
 impl<S: Data> IterableSequence for ArrayBase<S, Ix1> {
-    type Iter<'a> = ndarray::iter::Iter<'a, Self::Item, Ix1> where Self: 'a;
+    type Iter<'a> = ndarray::iter::Iter<'a, S::Elem, Ix1> where Self: 'a;
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
@@ -45,22 +35,10 @@ impl<S: Data> IterableSequence for ArrayBase<S, Ix1> {
 }
 
 impl<S: DataMut> IterableMutSequence for ArrayBase<S, Ix1> {
-    type IterMut<'a> = ndarray::iter::IterMut<'a, Self::Item, Ix1> where Self: 'a;
+    type IterMut<'a> = ndarray::iter::IterMut<'a, S::Elem, Ix1> where Self: 'a;
 
     #[inline]
     fn iter_mut(&mut self) -> Self::IterMut<'_> {
         self.iter_mut()
-    }
-}
-
-impl<S: Data> IterableOwnedSequence for ArrayBase<S, Ix1>
-where
-    Self::Item: Copy,
-{
-    type IterOwned<'a> = iter::Copied<ndarray::iter::Iter<'a, Self::Item, Ix1>> where Self: 'a;
-
-    #[inline]
-    fn iter_owned(&self) -> Self::IterOwned<'_> {
-        self.iter().copied()
     }
 }
