@@ -79,6 +79,104 @@ where
     }
 }
 
+/// A sequence that maps the values of an underlying sequence.
+///
+/// This struct is created by [`Sequence::map()`]. See its documentation for
+/// more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TryMap<Seq, F>(Seq, F);
+
+impl<Seq, F> TryMap<Seq, F> {
+    #[inline]
+    pub(crate) fn new(sequence: Seq, f: F) -> Self {
+        Self(sequence, f)
+    }
+}
+
+impl<'this, Seq, F, B> SequenceItem<'this> for TryMap<Seq, F>
+where
+    Seq: SequenceItem<'this>,
+    F: Fn(Seq::Item) -> Option<B>,
+{
+    type Item = B;
+}
+
+impl<Seq, F, B> Sequence for TryMap<Seq, F>
+where
+    Seq: Sequence,
+    F: for<'a> Fn(<Seq as SequenceItem<'a>>::Item) -> Option<B>,
+{
+    #[inline]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl<Seq, F, B> IndexableSequence for TryMap<Seq, F>
+where
+    Seq: IndexableSequence,
+    F: for<'a> Fn(<Seq as SequenceItem<'a>>::Item) -> Option<B>,
+{
+    #[inline]
+    fn get(&self, index: usize) -> Option<B> {
+        self.0.get(index).and_then(&self.1)
+    }
+
+    #[inline]
+    fn first(&self) -> Option<B> {
+        self.0.first().and_then(&self.1)
+    }
+
+    #[inline]
+    fn last(&self) -> Option<B> {
+        self.0.last().and_then(&self.1)
+    }
+}
+
+pub struct TryMapIter<'a, Seq, F> {
+    seq: Seq,
+    f: &'a F,
+}
+
+impl<'a, Seq, F, B> Iterator for TryMapIter<'a, Seq, F>
+where
+    Seq: Iterator,
+    F: Fn(Seq::Item) -> Option<B>,
+{
+    type Item = B;
+
+    fn next(&mut self) -> Option<B> {
+        self.seq.next().and_then(&self.f)
+    }
+}
+
+impl<'this, Seq, F, B> SequenceIter<'this> for TryMap<Seq, F>
+where
+    Seq: SequenceIter<'this>,
+    F: Fn(Seq::Item) -> Option<B>,
+{
+    type Iter = TryMapIter<'this, Seq::Iter, F>;
+}
+
+impl<Seq, F, B> IterableSequence for TryMap<Seq, F>
+where
+    Seq: IterableSequence,
+    F: for<'a> Fn(<Seq as SequenceItem<'a>>::Item) -> Option<B>,
+{
+    #[inline]
+    fn iter(&self) -> TryMapIter<'_, <Seq as SequenceIter<'_>>::Iter, F> {
+        TryMapIter {
+            seq: self.0.iter(),
+            f: &self.1,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Map;

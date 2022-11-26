@@ -2,7 +2,7 @@
 //!
 //! See the [crate-level documentation][`crate`].
 
-use crate::{Cloned, Compress, Concat, Copied, Map, Repeat, Select, Wrapper, Zip};
+use crate::{Cloned, Compress, Concat, Copied, Map, Repeat, Select, TryMap, Wrapper, Zip};
 use core::iter;
 use core::ops::{Deref, DerefMut};
 
@@ -124,6 +124,15 @@ pub trait Sequence: for<'this> SequenceItem<'this> {
         F: for<'a> Fn(<Self as SequenceItem<'a>>::Item) -> B,
     {
         Map::new(self, f)
+    }
+
+    #[inline]
+    fn try_map<B, F>(self, f: F) -> TryMap<Self, F>
+    where
+        Self: Sized,
+        F: for<'a> Fn(<Self as SequenceItem<'a>>::Item) -> Option<B>,
+    {
+        TryMap::new(self, f)
     }
 
     #[inline]

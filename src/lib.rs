@@ -235,7 +235,7 @@ mod zip;
 pub use compress::Compress;
 pub use concat::Concat;
 pub use copied::{Cloned, Copied};
-pub use map::Map;
+pub use map::{Map, TryMap};
 pub use repeat::Repeat;
 pub use select::Select;
 pub use traits::*;
