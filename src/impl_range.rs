@@ -61,6 +61,8 @@ impl IterableSequence for Range<usize> {
     }
 }
 
+unsafe impl Unique for Range<usize> {}
+
 #[cfg(test)]
 mod tests {
     use crate::traits::*;

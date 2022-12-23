@@ -593,6 +593,9 @@ where
     }
 }
 
+/// Marker trait for sequences that have unique elements.
+pub unsafe trait Unique {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

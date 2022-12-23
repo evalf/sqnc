@@ -184,6 +184,10 @@ where
     }
 }
 
+unsafe impl<Seq, Mask> Unique for Compress<Seq, Mask> where Seq: Unique {}
+
+unsafe impl<SeqIter, MaskIter> Unique for CompressIter<SeqIter, MaskIter> where SeqIter: Unique {}
+
 #[cfg(test)]
 mod tests {
     use super::Compress;

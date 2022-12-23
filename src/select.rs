@@ -1,4 +1,5 @@
 use crate::traits::*;
+use core::mem;
 
 /// Selection of a sequence.
 ///
@@ -176,6 +177,88 @@ where
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct SelectIterMut<'seq, Seq: ?Sized, IdxIter> {
+    sequence: &'seq mut Seq,
+    indices: IdxIter,
+}
+
+impl<'seq, Seq, IdxIter> Iterator for SelectIterMut<'seq, Seq, IdxIter>
+where
+    Seq: IndexableMutSequence + ?Sized,
+    IdxIter: Iterator<Item = usize> + Unique,
+{
+    type Item = <Seq as SequenceItemMut<'seq>>::ItemMut;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.sequence.get_mut(self.indices.next()?)?;
+        unsafe { Some(mem::transmute::<_, _>(value)) }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.indices.size_hint()
+    }
+}
+
+impl<'seq, Seq, IdxIter> DoubleEndedIterator for SelectIterMut<'seq, Seq, IdxIter>
+where
+    Seq: IndexableMutSequence + ?Sized,
+    IdxIter: Iterator<Item = usize> + DoubleEndedIterator + Unique,
+{
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let value = self.sequence.get_mut(self.indices.next_back()?)?;
+        unsafe { Some(mem::transmute::<_, _>(value)) }
+    }
+}
+
+impl<'seq, Seq, IdxIter> ExactSizeIterator for SelectIterMut<'seq, Seq, IdxIter>
+where
+    Seq: IndexableMutSequence + ?Sized,
+    IdxIter: Iterator<Item = usize> + ExactSizeIterator + Unique,
+{
+}
+
+impl<'this, Seq, Idx> SequenceIterMut<'this> for Select<Seq, Idx>
+where
+    Seq: IndexableMutSequence,
+    Idx: SequenceItem<'this, Item = usize> + SequenceIter<'this>,
+    <Idx as SequenceIter<'this>>::Iter: Unique,
+{
+    type IterMut = SelectIterMut<'this, Seq, Idx::Iter>;
+}
+
+impl<Seq, Idx> IterableMutSequence for Select<Seq, Idx>
+where
+    Seq: IndexableMutSequence,
+    Idx: IterableSequence + for<'a> SequenceItem<'a, Item = usize>,
+    for<'a> <Idx as SequenceIter<'a>>::Iter: Unique,
+{
+    #[inline]
+    fn iter_mut(&mut self) -> <Self as SequenceIterMut<'_>>::IterMut {
+        SelectIterMut {
+            sequence: &mut self.sequence,
+            indices: self.indices.iter(),
+        }
+    }
+}
+
+unsafe impl<Seq, Idx> Unique for Select<Seq, Idx>
+where
+    Seq: Unique,
+    Idx: Unique,
+{
+}
+
+unsafe impl<'seq, Seq: ?Sized, IdxIter> Unique for SelectIter<'seq, Seq, IdxIter>
+where
+    Seq: Unique,
+    IdxIter: Unique,
+{
+}
+
 #[cfg(test)]
 mod tests {
     use super::Select;
@@ -274,5 +357,13 @@ mod tests {
     fn iter() {
         let x = Select::new(3..6, [1, 1, 2].copied()).unwrap();
         assert!(x.iter().eq([4, 4, 5]));
+    }
+
+    #[test]
+    fn iter_mut() {
+        let mut x = [3, 4, 5, 6];
+        let mut y = Select::new(x.as_mut_sqnc(), 1..3).unwrap();
+        y.iter_mut().for_each(|v| *v += 3);
+        assert_eq!(x, [3, 7, 8, 6]);
     }
 }
