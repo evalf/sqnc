@@ -5,6 +5,7 @@
 use crate::{Cloned, Compress, Concat, Copied, Map, Repeat, Select, TryMap, Wrapper, Zip};
 use core::iter;
 use core::ops::{Deref, DerefMut};
+pub use sqnc_macros::*;
 
 // Instead of a generic associated type `Sequence::Item<'a>` we use
 // workaround 3 from [The Better Alternative to Lifetime GATs] for the reasons

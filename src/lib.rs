@@ -222,6 +222,7 @@ extern crate std;
 mod compress;
 mod concat;
 mod copied;
+pub mod derive;
 mod map;
 mod repeat;
 mod select;
