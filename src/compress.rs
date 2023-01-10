@@ -135,10 +135,27 @@ where
         None
     }
 
-    // TODO: size_hint
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.mask.size_hint().1)
+    }
 }
 
-// TODO: ExactSizeIterator and DoubleEndedIterator
+impl<SeqIter, MaskIter> DoubleEndedIterator for CompressIter<SeqIter, MaskIter>
+where
+    SeqIter: DoubleEndedIterator,
+    MaskIter: DoubleEndedIterator<Item = bool>,
+{
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        while let Some(select) = self.mask.next_back() {
+            let item = self.sequence.next_back();
+            if select {
+                return item;
+            }
+        }
+        None
+    }
+}
 
 impl<'this, Seq, Mask> SequenceIter<'this> for Compress<Seq, Mask>
 where
@@ -180,6 +197,23 @@ where
         CompressIter {
             sequence: self.sequence.iter_mut(),
             mask: self.mask.iter(),
+        }
+    }
+}
+
+impl<Seq, Mask, Item> IntoIterator for Compress<Seq, Mask>
+where
+    Seq: IterableSequence + IntoIterator<Item = Item> + for<'a> SequenceItem<'a, Item = Item>,
+    Mask: IntoIterator<Item = bool>,
+{
+    type Item = Item;
+    type IntoIter = CompressIter<Seq::IntoIter, Mask::IntoIter>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            sequence: self.sequence.into_iter(),
+            mask: self.mask.into_iter(),
         }
     }
 }

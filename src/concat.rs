@@ -167,6 +167,20 @@ where
     }
 }
 
+impl<Seq0, Seq1, Item> IntoIterator for Concat<Seq0, Seq1>
+where
+    Seq0: IterableSequence + for<'a> SequenceItem<'a, Item = Item> + IntoIterator<Item = Item>,
+    Seq1: IterableSequence + for<'a> SequenceItem<'a, Item = Item> + IntoIterator<Item = Item>,
+{
+    type Item = Item;
+    type IntoIter = iter::Chain<Seq0::IntoIter, Seq1::IntoIter>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter().chain(self.1.into_iter())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Concat;
