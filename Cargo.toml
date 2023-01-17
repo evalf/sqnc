@@ -1,0 +1,19 @@
+[package]
+name = "sqnc"
+description = "Traits and adaptors for sequences"
+keywords = ["sequence", "no_std"]
+version = "1.0.0"
+authors = ["Evalf <info@evalf.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/evalf/sqnc"
+rust-version = "1.66"
+
+[features]
+alloc = []
+
+[dependencies]
+ndarray = { version = "0.15", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
